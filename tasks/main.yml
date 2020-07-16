@@ -107,22 +107,14 @@
     msg: "Incompatible AS3 version type (< 3.16), foiled again Rebels"
   when: ver.2 is version('3.16', '<')
 
-#Can potentially remove this block 95-99 for new deployment role
-#- name: Check if FAST rpm exists locally
-#  stat:
-#    path: "{{ roles_d }}/f5_fast_install/files/{{ fastRPM }}"
-#  register: f_stat
-
 - name: Download rpm sha256 checksum as we do not have RPM
   get_url:
     url: https://github.com/F5Networks/f5-appsvcs-templates/releases/download/{{ fastTag }}/{{ fastSha }}
     dest: "{{ roles_d }}/f5_fast_install/files/{{ fastSha }}"
-  #when: f_stat.stat.exists == False
 
 - name: Register sha256 output for verification
   shell: cat "{{ roles_d }}/f5_fast_install/files/{{ fastSha }}" |  awk -F " " '{print $1}'
   register: shaSum
-  #when: f_stat.stat.exists == False
 
 - name: Download FAST rpm from github/F5 Networks
   get_url:
@@ -133,7 +125,6 @@
   until: dl_stat.msg.find("OK")  != 1
   retries: 3
   delay: 10
-  #when: f_stat.stat.exists == False
 
 - name: Check for 443 open
   wait_for:
