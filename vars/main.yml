@@ -1,0 +1,15 @@
+---
+# vars file for f5_fast_install
+
+fastTag: "v1.1.0"
+fastRPM: "f5-appsvcs-templates-1.1.0-1.noarch.rpm"
+fastSha: "{{ fastRPM +'.sha256'}}"
+f5_mgmt: "{{ hostvars[groups['adc'][0]]['ansible_host'] }}"
+e_user: "admin"
+e_pass: "L3tm3Endaem0n"
+roles_d: "."
+provider:
+  user: "{{ e_user }}"
+  password: "{{ e_pass }}"
+  server: "{{ f5_mgmt }}"
+  validate_certs: no

@@ -1,0 +1,207 @@
+---
+# tasks file for f5_fast_install
+
+- name: Check BIG IP tmos version >13
+  tags:
+    - tmos
+  uri:
+    url: "https://{{ hostvars[groups['adc'][0]]['ansible_host'] }}/mgmt/tm/sys/software/volume"
+    method: GET
+    force_basic_auth: yes
+    user: "{{ e_user}}"
+    password: "{{ e_pass }}"
+    validate_certs: no
+  register: tmos_ver
+  delegate_to: localhost
+
+- name: Set fact t_ver (tmos version)
+  set_fact:
+    t_ver: "{{ item }}"
+  loop: "{{ tmos_ver.json | json_query('items[*].version') }}"
+
+- name: Version is not supported
+  fail:
+    msg: "This version is not supported, only tmos versions >= 13.1"
+  when: t_ver is version('13.1', '<')
+
+- name: Version check special v13 only config
+  bigip_command:
+    commands: touch /var/config/rest/iapps/enable
+  when: t_ver == 13
+
+#############################################
+#  Another way to check for tmos version 
+#
+#- name: Check BIG IP TMOS version 
+#  tags:
+#    - tmos 
+#  bigip_command:
+#    commands: show sys version
+#    provider: "{{ provider }}"
+#  register: tmos
+#
+#- name: show version
+#  tags: 
+#    - tmos 
+#  debug: 
+#    var: tmos.stdout_lines[0][3]
+################################################
+
+- name: Generate F5 login token
+  tags:
+    - token
+  uri:
+    url: "https://{{ hostvars[groups['adc'][0]]['ansible_host'] }}/mgmt/shared/authn/login"
+    method: POST
+    body_format: json
+    body:
+      {
+        "username": "{{e_user}}",
+        "password": "{{e_pass}}",
+        "loginProviderName": "tmos",
+      }
+    validate_certs: no
+  register: Auth_tok
+  retries: 4
+  delay: 15
+  until: Auth_tok.status == 200
+  delegate_to: localhost
+
+- name: Validate AS3 is installed (must be >=3.16)
+  uri:
+    url: "https://{{ hostvars[groups['adc'][0]]['ansible_host'] }}/mgmt/shared/iapp/installed-packages"
+    method: GET
+    body_format: json
+    headers:
+      Content-Type: application/json
+      X-F5-Auth-Token: "{{ Auth_tok.json.token.token }}"
+    validate_certs: no
+    status_code: 200
+  tags: fcheck
+  register: returnd
+  delegate_to: localhost
+
+- name: Find AS3 release installed { converts icontrol call above to python list fastPre[] }
+  set_fact:
+     fastPre: "{{ returnd.json | json_query('items[*].packageName') | list}}"
+
+- name: Set fact as3Installd { Searches for as3/f5-appsvcs* in fastPre[] }
+  set_fact:
+    as3Installd: "{{ item }}"
+  loop: "{{ fastPre }}"
+  when: fastPre is search("f5-appsvcs*")
+
+#This validates existence of step above, variable as3Installd will NOT be defined if not installed; Process with then terminate
+- name: Mos Eisley Checkpoint - Droid Detection
+  fail:
+    msg: "These ARE the droids we're looking for. Rebel scum must first run the AS3 install role"
+  when: as3Installd  is not defined
+
+- name: Version validation if AS3 is installed
+  set_fact:
+      ver: "{{ as3Installd.split('-') | list }}"
+  when: as3Installd is defined
+
+- name: Endor shield generator ambush check
+  fail:
+    msg: "Incompatible AS3 version type (< 3.16), foiled again Rebels"
+  when: ver.2 is version('3.16', '<')
+
+#Can potentially remove this block 95-99 for new deployment role
+#- name: Check if FAST rpm exists locally
+#  stat:
+#    path: "{{ roles_d }}/f5_fast_install/files/{{ fastRPM }}"
+#  register: f_stat
+
+- name: Download rpm sha256 checksum as we do not have RPM
+  get_url:
+    url: https://github.com/F5Networks/f5-appsvcs-templates/releases/download/{{ fastTag }}/{{ fastSha }}
+    dest: "{{ roles_d }}/f5_fast_install/files/{{ fastSha }}"
+  #when: f_stat.stat.exists == False
+
+- name: Register sha256 output for verification
+  shell: cat "{{ roles_d }}/f5_fast_install/files/{{ fastSha }}" |  awk -F " " '{print $1}'
+  register: shaSum
+  #when: f_stat.stat.exists == False
+
+- name: Download FAST rpm from github/F5 Networks
+  get_url:
+    url: https://github.com/F5Networks/f5-appsvcs-templates/releases/download/{{ fastTag }}/{{ fastRPM }}
+    dest: "{{ roles_d }}/f5_fast_install/files/{{ fastRPM }}"
+    checksum: sha256:{{ shaSum.stdout }}
+  register: dl_stat
+  until: dl_stat.msg.find("OK")  != 1
+  retries: 3
+  delay: 10
+  #when: f_stat.stat.exists == False
+
+- name: Check for 443 open
+  wait_for:
+    host: "{{ hostvars[groups['adc'][0]]['ansible_host'] }}"
+    port: 443
+    state: started
+    delay: 0
+    timeout: 10
+  ignore_errors: yes
+
+- name: Create LIST of all installed iapp packages (AS3/DO/TS/FAST)
+  uri:
+    url: "https://{{ hostvars[groups['adc'][0]]['ansible_host'] }}/mgmt/shared/iapp/installed-packages"
+    method: GET
+    body_format: json
+    headers:
+      Content-Type: application/json
+      X-F5-Auth-Token: "{{ Auth_tok.json.token.token }}"
+    validate_certs: no
+    status_code: 200
+  register: returnd
+  delegate_to: localhost
+
+#Can probably remove this block 145-148; this role is to install new deployment
+- name: Look if FAST exists  
+  set_fact:
+     fastPre: "{{ returnd.json | json_query('items[*].packageName') | list}}"
+
+- name: Set install variable
+  set_fact:
+    notInstalled: true
+  when: fastPre is not search("f5-appsvcs-templates*")
+
+- name: Install FAST with F5 module
+  bigip_iapplx_package:
+    package: "{{ roles_d }}/f5_fast_install/files/{{ fastRPM }}"
+    provider: "{{ provider }}"
+  delegate_to: localhost
+  when: notInstalled is defined
+
+- name: Check FAST after installation
+  uri:
+    url: "https://{{ hostvars[groups['adc'][0]]['ansible_host'] }}/mgmt/shared/iapp/installed-packages"
+    method: GET
+    body_format: json
+    headers:
+      Content-Type: application/json
+      X-F5-Auth-Token: "{{ Auth_tok.json.token.token }}"
+    validate_certs: no
+    status_code: 200,404
+  tags: fcheck
+  register: rPost
+  delegate_to: localhost
+
+- name: Create LIST of all installed iapp packages (AS3/DO/TS/FAST)
+  set_fact:
+     fastPost: "{{ rPost.json | json_query('items[*].packageName') | list}}"
+
+- name: Set fact to true when FAST found in list
+  set_fact:
+    Installed: true
+  when: fastPost is search("f5-appsvcs-templates*")
+  failed_when: Installed != true
+
+- name: Avoid bounty hunters - enable cloaking
+  file:
+    path: "{{ roles_d }}/f5_fast_install/files/{{ item }}"
+    state: absent
+  with_items:
+    - "{{ fastSha }}"
+    - "{{ fastRPM }}"
