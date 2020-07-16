@@ -6,7 +6,7 @@ fastRPM: "f5-appsvcs-templates-1.1.0-1.noarch.rpm"
 fastSha: "{{ fastRPM +'.sha256'}}"
 f5_mgmt: "{{ hostvars[groups['adc'][0]]['ansible_host'] }}"
 e_user: "admin"
-e_pass: "L3tm3Endaem0n"
+e_pass: "secret"
 roles_d: "."
 provider:
   user: "{{ e_user }}"
