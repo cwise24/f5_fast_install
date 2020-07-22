@@ -1,6 +1,15 @@
 ---
 # tasks file for f5_fast_install
 
+- name: Check for 443 open
+  wait_for:
+    host: "{{ hostvars[groups['adc'][0]]['ansible_host'] }}"
+    port: 443
+    state: started
+    delay: 0
+    timeout: 10
+  ignore_errors: yes
+  
 - name: Check BIG IP tmos version >13
   tags:
     - tmos
