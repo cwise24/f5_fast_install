@@ -1,4 +1,4 @@
-Role: f5_fast_install
+f5_fast_install
 =========
 
 F5 Application Services Templates (FAST) are an easy and effective way to deploy applications on the BIG-IP system using AS3.
