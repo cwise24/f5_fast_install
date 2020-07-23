@@ -11,7 +11,7 @@ Requirements
 F5 Application Service Templates (FAST) relies on AS3 >=3.16 being installed. This role will check for tmos version and AS3 versioning. Please use f5_as3_install role prior.
 
 *TMOS v13*
-If tmos version 13 is detected the bash script `touch /var/config/rest/iapps/enable` is invoked. You will need to supply credentials to the hostvars on your inventory.
+If tmos version 13 is detected the bash script `touch /var/config/rest/iapps/enable` is invoked. 
 
 Role Variables
 --------------
