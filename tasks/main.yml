@@ -34,8 +34,20 @@
   when: t_ver is version('13.1', '<')
 
 - name: Version check special v13 only config
-  bigip_command:
-    commands: touch /var/config/rest/iapps/enable
+  uri:
+    url: "https://{{ hostvars[groups['adc'][0]]['ansible_host'] }}/mgmt/tm/util/bash"
+    method: POST
+    force_basic_auth: yes
+    headers:
+      Content-Type: application/json
+    body: {
+           "command": "run",
+           "utilCmdArgs": "-c 'touch /var/config/rest/iapps/enable'"
+          }
+    body_format: json
+    user: "{{ e_user }}"
+    password: "{{ e_pass }}"
+    validate_certs: no
   when: t_ver == 13
 
 #############################################
